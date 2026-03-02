@@ -17,20 +17,31 @@ function normalizeState(value) {
 }
 
 export async function GET() {
+  const headers = { 'Cache-Control': 'no-store' }
+  let state = null
+  let storage = 'memory'
+
   if (hasBlobToken()) {
+    storage = 'blob'
     try {
       const result = await get(BLOB_PATH, { access: 'private' })
       if (result?.statusCode === 200 && result.stream) {
         const text = await new Response(result.stream).text()
         const data = JSON.parse(text || '{}')
-        return Response.json({ state: normalizeState(data.state) })
+        state = normalizeState(data.state)
       }
     } catch {
-      // Blob not found or error
+      // Blob not found or error (e.g. no blob created yet)
     }
-    return Response.json({ state: null })
+  } else {
+    state = memoryState
   }
-  return Response.json({ state: memoryState })
+
+  headers['X-Storage'] = storage
+  return Response.json(
+    { state, _meta: { storage } },
+    { headers }
+  )
 }
 
 export async function POST(request) {
@@ -44,6 +55,7 @@ export async function POST(request) {
     await put(BLOB_PATH, JSON.stringify({ state }), {
       access: 'private',
       addRandomSuffix: false,
+      allowOverwrite: true,
     })
   } else {
     memoryState = state
